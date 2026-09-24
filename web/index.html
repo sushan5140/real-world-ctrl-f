@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Real-World Ctrl+F · Your room has a search bar</title>
+<link rel="stylesheet" href="/style.css"></head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Real-World Ctrl+F"><span class="logo">⌕</span><span>REAL-WORLD<br><strong>CTRL + F</strong></span></a>
+    <div class="eyebrow">YOUR VISUAL MEMORY</div>
+    <div class="intro">Find the things<br>you just put down<span>.</span></div>
+    <p class="intro-note">A small experiment in giving physical objects a searchable history.</p>
+    <div class="line"></div>
+    <div class="listheading"><span>OBJECT LIBRARY</span><span id="count">0</span></div>
+    <div id="objects" class="objects" aria-live="polite"></div>
+    <button id="add" class="add">＋ &nbsp; Enroll a new object</button>
+    <div class="sidebar-bottom"><div class="dot"></div><span id="camera-status">Connecting to camera…</span></div>
+  </aside>
+  <main class="main">
+    <header class="top"><div class="crumb">STUDIO <span>/</span> LIVE DESK</div><div class="local"><i></i> ON-DEVICE · PRIVATE BY DEFAULT</div></header>
+    <section class="hero"><div class="tag">01 / FIND IN THE PHYSICAL WORLD</div>
+      <h1>Where did I <em>put it?</em></h1><p>Your camera remembers where registered objects were last seen. Search by name and follow the marker — no guessing.</p>
+      <form id="search-form" class="search"><span class="search-icon">⌕</span><input id="search" autocomplete="off" maxlength="100" placeholder="Try ‘where are my keys?’" aria-label="Find an object"><button id="voice" type="button" title="Optional browser voice service; audio may be processed by your browser provider" class="voice" aria-label="Search by voice">◉</button><button type="submit">Find object <span>↗</span></button></form>
+      <div id="message" class="message" role="status" aria-live="polite">Show the printed markers to the camera, or enroll your own textured object.</div>
+    </section>
+    <section class="stage"><div class="stage-top"><div><span class="live-dot"></span> LIVE CAMERA <span class="secondary">/ LAST-SEEN MAP</span></div><div class="stage-meta">FIX YOUR CAMERA IN PLACE FOR ACCURATE HISTORY</div></div>
+      <div id="camera-frame" class="camera-frame"><img id="feed" src="/stream" alt="Local camera feed with detected object boxes"><div id="selection" class="selection" hidden></div><div id="camera-placeholder" class="placeholder">📷 <br>Camera feed unavailable. Check camera permissions and refresh.</div><div id="draw-hint" class="draw-hint" hidden>Drag a rectangle around your object — include its distinctive surface.</div></div>
+      <div class="stage-foot"><span>● &nbsp; Tracking is on your computer, not a cloud service.</span><span id="last-refresh">READY</span></div></section>
+    <section class="details"><div class="detail-main"><div class="eyebrow">SELECTED OBJECT</div><h2 id="selected-name">Nothing selected yet</h2><p id="selected-description">Search above, or choose an object from the left.</p><div id="selected-meta" class="meta"></div><div class="actions"><button id="point" disabled class="primary">↗ &nbsp; Point spotlight</button><button id="light-off" disabled class="ghost">Turn light off</button><button id="forget" disabled class="ghost danger">Forget object</button></div></div><div class="evidence"><div class="eyebrow">LAST VISIBLE CROP</div><img id="snapshot" alt="Last unobscured crop of object" hidden><p id="snapshot-note">A crop appears after the object leaves the camera view.</p></div></section>
+    <footer>REAL-WORLD CTRL+F <span>·</span> A LOCAL CREATIVE TECHNOLOGY EXPERIMENT <span>·</span> LAST SEEN ≠ STILL THERE</footer>
+  </main>
+</div>
+<dialog id="enroll-dialog"><form id="enroll-form" method="dialog"><div class="eyebrow">ENROLLMENT / 02</div><h2>Give that object a name.</h2><p>The selected image area will be used as your private visual template. Textured, detailed objects work better than plain plastic.</p><label for="object-name">NAME</label><input id="object-name" maxlength="45" minlength="2" required placeholder="e.g. My notebook"><label for="object-aliases">ALIASES <small>optional, comma separated</small></label><input id="object-aliases" placeholder="e.g. journal, diary"><div class="dialog-actions"><button type="button" id="cancel-enroll" class="ghost">Cancel</button><button type="submit" class="primary">Save this object ↗</button></div></form></dialog>
+<script src="/client.js" defer></script>
+</body></html>

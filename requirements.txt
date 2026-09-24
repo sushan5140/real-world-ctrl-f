@@ -1,2 +1,5 @@
 opencv-contrib-python>=4.8,<5
 numpy>=1.24,<3
+fastapi>=0.110,<1
+uvicorn>=0.27,<1
+pyserial>=3.5,<4

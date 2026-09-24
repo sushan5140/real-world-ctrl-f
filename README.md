@@ -1,61 +1,86 @@
-# REAL-WORLD CTRL+F — Version 0.1
+# REAL-WORLD CTRL+F
 
-**Concept:** Search for a physical object by name and highlight the last place a webcam saw it. All processing stays on your machine.
+**What if you could search your desk the way you search your laptop?**
 
-**Important:** This first build uses *printed ArUco tags attached to objects*. It does NOT yet identify arbitrary untagged USB drives, pens, etc. That distinction is intentional: the first milestone is to validate the detect → remember → find interaction before tackling object recognition and robotic pointing.
+A local, experimental physical-object finder: a stationary camera detects registered objects, remembers where each one was **last seen**, lets you search by name, and can optionally command a small pan/tilt LED to point at that location. A responsive browser studio shows the camera feed, live detections, local object library, last-visible image crops, and search results.
 
-## Quick start (Windows PowerShell)
+**Important: last observed location does not guarantee an object is still there.** A single camera cannot see inside drawers or through books. The software tracks printed ArUco markers under suitable conditions, and *optionally* recognizes textured objects enrolled by selecting their image region. The latter uses ORB feature matching, not a trained universal item detector: plain USB sticks and visually identical earphones can fail. No AI API key, account, or cloud connection is required for core visual search.
 
-Open a terminal in this project folder:
+## Start on Windows (PowerShell)
+
+Download or clone the project, then **enter the folder containing `server.py` and `requirements.txt`**. If you already have the repo checked out:
 
 ```powershell
+cd "$env:USERPROFILE\Downloads\real-world-ctrl-f"
 py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe make_markers.py
-.\.venv\Scripts\python.exe app.py
+.\.venv\Scripts\python.exe server.py
 ```
 
-The marker PNGs are generated locally in `markers/` by `make_markers.py`, so they are not committed to the repository. If PowerShell allows virtual environment activation, you can activate it and use `python` instead. On macOS/Linux, activate with `source .venv/bin/activate`. Try `python app.py --camera 1` if your default camera isn't the intended one.
+Open **http://127.0.0.1:8765** in your browser. If your camera doesn't open, quit with `Ctrl+C` and retry with `--camera 1`. On some systems, Windows Settings → Privacy & security → Camera → allow desktop apps to access camera needs to be enabled. Shut down other apps using the same camera.
 
-## Physical setup
+Use `python server.py --port 8766` if port 8765 is occupied. For a camera-window-only version, run `python app.py` instead of `server.py` (original V0.1 interface).
 
-1. Generate and print the three PNG cards from `markers/` at a size with markers roughly 4–6 cm wide. Keep the white margin around the black tag.
-2. Affix a card to each named object (or use a larger proxy tag alongside it for the first test; a separate proxy only tracks the card, not the object).
-3. Place a webcam overhead, preferably with the whole desk visible, and keep the camera fixed.
-4. Show each tag clearly to the camera. The detected tag gets a green rectangle.
-5. Press **F** in the camera window, type `where is my usb drive` (or `keys`, `earphones`) and press **Enter**. Alternatively, use the **1/2/3** quick-search keys.
-6. Cover the tag with a notebook *without moving the tagged object*. The overlay changes to **LAST SEEN HERE**, showing the last observed position and timestamp. The app saves an image of the last unobscured frame to `data/last_seen_0.jpg` (and similarly for other IDs).
-7. Press **C** to clear or **Q** to quit. Camera footage is not streamed or continuously recorded.
+macOS/Linux: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python make_markers.py && python server.py`.
 
-**For the clean demo:** print the tag, show it on top of the object, and cover it. If you slide a covered object after it disappears, the app cannot know it moved; it correctly reports *last seen*, not *current position*. Test in good lighting with minimal glare.
+## Demo A: tags (most dependable starting point)
 
-## Configuration
+1. Print `markers/0_usb_drive.png`, `markers/1_keys.png`, and `markers/2_earphones.png` at approximately 4–6 cm wide. `make_markers.py` generates these locally. Keep the white margin visible.
+2. Attach a corresponding card **to** the object or place it next to the object as a *proxy*. A separate card will only track the card, not the object.
+3. Put the webcam on a stand looking down at a well-lit desk and **don't move the camera** after starting. A laptop camera looking straight ahead will work for experimentation but has a limited desk view.
+4. Show a tag. Its box becomes visible and the item appears as “visible now.”
+5. Search `where is my USB drive`, or click the item in the sidebar.
+6. Cover the object and its tag without moving it. The camera can no longer see it; the UI displays a reticle at the **last observed** position and a crop of the last unobscured view.
+7. Select “Forget object” to clear history; builtin tag cards remain available for later reuse.
 
-Edit `objects.json` to rename tags/add aliases or add IDs 3–49. Run `python make_markers.py` again after editing. The UI has quick keys for the first nine, space permitting, but typed search works for all named objects.
+## Demo B: enroll your own object (experimental untagged tracking)
 
-## Local storage / privacy
+1. Click **Enroll a new object**. Drag a rectangle directly on the live camera picture around an item, then enter its name and optional aliases.
+2. Use a well-lit, distinctively textured, fairly flat item (printed notebook cover, decorated box, graphic coaster). Feature matching is usually less reliable on plain, reflective, rotating, or 3D objects.
+3. Keep the same face of the object visible. Move it around and observe whether the detection box follows it. Cover it, then search for its last seen position.
+4. If enrollment says “not enough distinctive details,” improve lighting, move the camera closer, or use the printed-marker workflow instead. **Enrollment success does not guarantee robust recognition**; evaluate with both positive and negative test objects.
+5. Custom object crops are stored in `data/templates/`. Object names and aliases in `data/catalog.json`, history in `data/locations.sqlite3`, and last visible crops in `data/snapshots/`.
 
-The local `data/locations.sqlite3` file stores tag ID, last-observed timestamp, and normalized x/y camera position. `data/last_seen_<id>.jpg` stores the latest unobscured frame when a tag disappears. Delete the `data/` folder to wipe history. Don't point your camera at sensitive documents or people; snapshots capture the **whole frame**, not just the object.
+**Privacy:** The core app serves the webcam stream **only on your computer** at `127.0.0.1`; it does not upload frames. It automatically stores a cropped last-seen image locally when an observed object disappears. Don't aim the camera at sensitive information. To remove all local memory, stop the app and delete `data/`. A voice-search button is optional and depends on the browser's speech service, which **may send microphone audio to a vendor**; core text search needs no microphone.
 
-## Project stages
+## Optional pan/tilt spotlight hardware
 
-| Stage | Capability | Status |
-|---|---|---|
-| V0.1 | Webcam sees printed tags; local last-seen memory; type-to-find overlay | Implemented; tested with a synthetic camera frame, **not verified with a physical webcam here** |
-| V0.2 | Tagged-object last-seen snapshots in a polished interface; occlusion handling, calibrated stationary-camera test | Next |
-| V0.3 | Recognize a small, user-enrolled set of **untagged** objects; quantify false positives and occlusion failures | Research / build |
-| V0.4 | ESP32 pan/tilt LED points to the *last observed* x/y with a calibrated camera-to-desk mapping | Hardware extension |
-| V1 | Voice query, robust object identity, motorized spotlight, full filming demo | Stretch goal |
+This source tree includes the full optional software serial interface and ESP32 firmware, **not** a claim of tested physical robotics. Parts: an ESP32, two hobby servos, a pan/tilt bracket, a low-power LED and appropriate transistor/driver, and a suitable external 5V servo supply. Connect all grounds together. Don't run servos from the microcontroller's 3.3V pin; don't connect mains-powered lamps or lasers.
 
-### Honest constraints
+| ESP32 pin | Function |
+|---|---|
+| GPIO 18 | Pan servo signal |
+| GPIO 19 | Tilt servo signal |
+| GPIO 23 | LED driver input (through suitable driver) |
+| GND | Common ground with external supply |
 
-- Tracking printed markers doesn't equal recognizing an arbitrary pen or USB drive.
-- A single overhead camera cannot locate an object hidden before being seen, distinguish lookalike objects without identity cues, or see into drawers.
-- Last-seen data may be stale; don't claim the object is **definitely** still there.
-- Motorized spotlight requires calibration, servo limits, a safe low-power LED, and stable power. No high-power laser.
+1. In Arduino IDE, install the **ESP32Servo** library and flash `firmware/spotlight/spotlight.ino` to your ESP32.
+2. Find the board's serial port in Windows Device Manager. Stop Arduino Serial Monitor before using the Python application.
+3. **Calibrate before operating:** edit `spotlight.json` with the actual servo angle pairs that aim at the four corners of your camera's fixed desk view: `tl`, `tr`, `bl`, `br`. The included values are placeholders; measure them on your own rig. The firmware further clamps movement to 30–150 degrees by default; adjust only after verifying safe limits.
+4. Run `.\.venv\Scripts\python.exe server.py --serial-port COM3` (change port). In the studio, search an object and click **Point spotlight**. The command sends the remembered normalized x/y through a bilinear corner mapping to servo angles and turns on the LED. **Turn light off** sends a separate command.
+5. The illumination is a demonstration of last-seen location, not an autonomous object-chasing robot. Without physical calibration, the LED may point somewhere else. Keep your eyes out of the beam and avoid leaving the rig running unattended.
 
-## Run tests without a camera
+## Technical structure
+
+| File | Responsibility |
+|---|---|
+| `server.py` | Local web API, camera loop, persistent observations, enrollment, search and image crops |
+| `vision.py` | Private visual templates and geometric ORB/Homography matching |
+| `tracker.py` | ArUco detection, SQLite memory and local name matching |
+| `spotlight.py` / `spotlight.json` | Optional serial pan/tilt + user-calibrated camera mapping |
+| `firmware/spotlight/spotlight.ino` | ESP32 servo/LED firmware |
+| `web/` | Responsive browser studio, object library and optional browser voice input |
+| `app.py` | Original minimal OpenCV V0.1 desktop view |
+
+## Validation
 
 ```powershell
-python -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
+
+The automated tests cover synthetic printed-tag detection, SQLite persistence, browser routes, tag occlusion and snapshot retrieval, visual enrollment on a textured synthetic object, forgetting, and servo mapping. GitHub Actions runs camera-free tests across Python 3.11–3.13. Tests do not establish performance with your specific webcam, lighting, object types or real electronics; those require physical testing.
+
+## Demo truthfulness
+
+You can say: “A stationary webcam remembers where a registered object was last seen; the optional spotlight points to the remembered position.” Don't say: “It always knows where every lost item is.” If someone moves a covered object or the camera moves, the saved coordinates can become misleading. Future engineering work includes multi-camera mapping, measured recognition/false-positive rates on a real desk, and automatic calibration assistance.

@@ -1,8 +1,7 @@
 """Local visual-object tracking with persistent last-seen records.
 
 Version 0.1 tracks printed ArUco tags attached to objects, not arbitrary
-untagged objects. This intentionally avoids claiming a general object-detector
-exists before one has been trained and evaluated.
+untagged objects.
 """
 from __future__ import annotations
 
@@ -20,9 +19,9 @@ import numpy as np
 @dataclass(frozen=True)
 class Observation:
     marker_id: int
-    x: float  # normalized [0, 1] in the camera frame
+    x: float
     y: float
-    box: tuple[int, int, int, int]  # pixel coordinates
+    box: tuple[int, int, int, int]
 
 
 def load_objects(path: Path) -> dict[int, dict[str, Any]]:
@@ -64,7 +63,9 @@ def detect_markers(frame: np.ndarray) -> dict[int, Observation]:
 
 def init_db(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
+    # The browser studio handles writes/reads from different threads under
+    # Engine.lock; the minimal OpenCV V0.1 app remains single-threaded.
+    conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.execute("""CREATE TABLE IF NOT EXISTS last_seen (
         marker_id INTEGER PRIMARY KEY,
         timestamp REAL NOT NULL,
