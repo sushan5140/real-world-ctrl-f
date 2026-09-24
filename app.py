@@ -1,146 +1,131 @@
-"""Real-World Ctrl+F — webcam proof of concept (all processing local)."""
+"""Real-World Ctrl+F — minimal desktop window (no browser needed).
+
+Uses exactly the same tracking engine, object library and memory as the
+browser studio (server.py), so objects enrolled in the browser are found
+here too. Run only one of the two at a time.
+
+Keys:  F = type a search   1-9 = quick select   C = clear   Q / Esc = quit
+"""
 from __future__ import annotations
 
 import argparse
+import time
 from datetime import datetime
 from pathlib import Path
-import time
 
 import cv2
 import numpy as np
 
-from tracker import (Observation, detect_markers, get_last_seen, init_db,
-                     load_objects, match_object, save_observation)
+from camera import open_capture, parse_source
+from engine import LAST_SEEN, ROOT, UNRELIABLE, VISIBLE, TrackingEngine
 
-ROOT = Path(__file__).resolve().parent
-DATA = ROOT / "data"
-WINDOW = "REAL-WORLD CTRL+F"
-# BGR color palette: warm white, slate, coral (not neon).
+WINDOW = 'REAL-WORLD CTRL+F'
 WHITE = (247, 246, 241)
 INK = (48, 55, 53)
-CORAL = (115, 143, 232)
-GREEN = (112, 136, 80)
+CORAL = (84, 125, 231)
+GREEN = (104, 176, 118)
+AMBER = (60, 160, 230)
+GREY = (150, 150, 150)
+STATE_LABEL = {VISIBLE: 'IN VIEW NOW', LAST_SEEN: 'LAST SEEN', UNRELIABLE: 'UNCERTAIN',
+               'not_observed': 'NOT SEEN YET'}
+STATE_COLOR = {VISIBLE: GREEN, LAST_SEEN: CORAL, UNRELIABLE: AMBER, 'not_observed': GREY}
 
 
-def text(img, msg, x, y, scale=0.62, color=INK, thick=1):
-    cv2.putText(img, msg, (int(x), int(y)), cv2.FONT_HERSHEY_SIMPLEX,
-                scale, color, thick, cv2.LINE_AA)
+def text(img, msg, x, y, scale=.62, color=INK, thick=1):
+    msg = str(msg).encode('ascii', 'replace').decode('ascii')
+    cv2.putText(img, msg, (int(x), int(y)), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick, cv2.LINE_AA)
 
 
-def make_display(frame, observations, objects, selected, record, typing, query, status):
+def make_display(frame, items, selected, typing, query, status_line):
     h, w = frame.shape[:2]
     scale = min(1.0, 980 / w)
     fw, fh = round(w * scale), round(h * scale)
     display = cv2.resize(frame, (fw, fh), interpolation=cv2.INTER_AREA)
-    sidebar = 336
+    sidebar = 340
     panel = np.full((fh, sidebar, 3), WHITE, dtype=np.uint8)
-    text(panel, "REAL-WORLD", 22, 42, 0.85, INK, 2)
-    text(panel, "CTRL + F", 22, 79, 0.96, INK, 2)
+    text(panel, 'REAL-WORLD', 22, 42, .85, INK, 2)
+    text(panel, 'CTRL + F', 22, 79, .96, INK, 2)
     cv2.line(panel, (20, 98), (sidebar - 20, 98), (211, 211, 205), 1)
-    text(panel, "F = FIND OBJECT", 20, 129, 0.58, INK, 2)
-    text(panel, "1 / 2 / 3 = QUICK SEARCH", 20, 156, 0.46, INK)
-    text(panel, "C = CLEAR     Q = QUIT", 20, 179, 0.46, INK)
+    text(panel, 'F = FIND OBJECT', 20, 129, .58, INK, 2)
+    text(panel, '1-9 = QUICK SELECT', 20, 156, .46, INK)
+    text(panel, 'C = CLEAR     Q = QUIT', 20, 179, .46, INK)
     cv2.line(panel, (20, 195), (sidebar - 20, 195), (211, 211, 205), 1)
-    for n, (id_, info) in enumerate(objects.items()):
-        yy = 232 + n * 58
+    for n, item in enumerate(items):
+        yy = 232 + n * 52
         if yy > fh - 105:
             break
-        active = id_ == selected
+        active = item['id'] == selected
         if active:
-            cv2.rectangle(panel, (10, yy - 26), (sidebar - 10, yy + 19), (224, 231, 235), -1)
-        text(panel, f"{n+1}. {info['name']}", 23, yy, 0.62, INK, 2 if active else 1)
-        seen = "IN VIEW" if id_ in observations else "LAST SEEN" if id_ == selected and record else ""
-        if seen:
-            text(panel, seen, 24, yy + 17, 0.38, GREEN if seen == "IN VIEW" else CORAL)
+            cv2.rectangle(panel, (10, yy - 24), (sidebar - 10, yy + 20), (224, 231, 235), -1)
+        text(panel, f"{n + 1}. {item['name']}", 23, yy, .6, INK, 2 if active else 1)
+        text(panel, STATE_LABEL[item['state']], 26, yy + 16, .38, STATE_COLOR[item['state']], 1)
     if typing:
         cv2.rectangle(panel, (12, fh - 89), (sidebar - 12, fh - 33), (255, 255, 255), -1)
         cv2.rectangle(panel, (12, fh - 89), (sidebar - 12, fh - 33), INK, 1)
-        text(panel, "Search:", 22, fh - 95, 0.44)
-        text(panel, query[-31:] + "_", 22, fh - 53, 0.52)
+        text(panel, 'Search:', 22, fh - 95, .44)
+        text(panel, query[-31:] + '_', 22, fh - 53, .52)
     else:
-        text(panel, status[:45], 20, fh - 30, 0.42)
-    for id_, obs in observations.items():
-        if id_ not in objects:
-            continue
-        x1, y1, x2, y2 = (round(p * scale) for p in obs.box)
-        color = CORAL if id_ == selected else GREEN
-        cv2.rectangle(display, (x1, y1), (x2, y2), color, 2 if id_ != selected else 4)
-        text(display, objects[id_]["name"], x1, max(y1 - 9, 23), 0.65, color, 2)
-    if selected is not None and record:
-        px, py = (record['x'] * fw, record['y'] * fh)
-        cx, cy = round(px), round(py)
-        is_visible = selected in observations
-        # Last-known position remains useful even after the tag is occluded.
-        pulse = 18 + round(4 * abs(np.sin(time.time() * 3)))
-        cv2.circle(display, (cx, cy), pulse, CORAL if not is_visible else GREEN, 3)
-        cv2.circle(display, (cx, cy), 5, CORAL if not is_visible else GREEN, -1)
+        text(panel, status_line[:46], 20, fh - 30, .42)
+    item = next((i for i in items if i['id'] == selected), None)
+    if item:
+        state = item['state']
+        pos = item['live'] or ({'x': item['x'], 'y': item['y']} if item['x'] is not None else None)
         cv2.rectangle(display, (0, max(fh - 70, 0)), (fw, fh), (42, 49, 48), -1)
-        name = objects[selected]['name']
-        when = datetime.fromtimestamp(record['timestamp']).strftime('%H:%M:%S')
-        message = (f"{name}: HERE NOW" if is_visible else
-                   f"{name}: LAST SEEN HERE AT {when}")
-        text(display, message, 14, fh - 30, 0.62, WHITE, 2)
-    elif selected is not None:
-        cv2.rectangle(display, (0, max(fh - 70, 0)), (fw, fh), (42, 49, 48), -1)
-        text(display, "NOT SEEN YET - SHOW ITS TAG TO CAMERA", 14, fh - 30, 0.58, WHITE, 2)
+        if pos:
+            cx, cy = round(pos['x'] * fw), round(pos['y'] * fh)
+            color = STATE_COLOR[state]
+            pulse = 18 + round(4 * abs(np.sin(time.time() * 3)))
+            cv2.circle(display, (cx, cy), pulse, color, 3, cv2.LINE_AA)
+            cv2.circle(display, (cx, cy), 5, color, -1, cv2.LINE_AA)
+        if state == VISIBLE:
+            message = f"{item['name']}: IN VIEW NOW"
+        elif state == 'not_observed':
+            message = f"{item['name']}: NOT SEEN YET - SHOW IT TO THE CAMERA"
+        else:
+            when = datetime.fromtimestamp(item['last_seen']).strftime('%H:%M:%S')
+            prefix = 'LAST SEEN HERE' if state == LAST_SEEN else 'UNCERTAIN - LAST SEEN HERE'
+            message = f"{item['name']}: {prefix} AT {when} (MAY HAVE MOVED)"
+        text(display, message, 14, fh - 30, .58, WHITE, 2)
     return np.concatenate([display, panel], axis=1)
 
 
-def run(camera: int, mirrored: bool):
-    objects = load_objects(ROOT / "objects.json")
-    DATA.mkdir(exist_ok=True)
-    conn = init_db(DATA / "locations.sqlite3")
-    cap = cv2.VideoCapture(camera, cv2.CAP_DSHOW) if __import__('sys').platform == 'win32' else cv2.VideoCapture(camera)
+def run(camera, mirrored: bool, data_dir: Path) -> None:
+    engine = TrackingEngine(data_dir)
+    cap = open_capture(camera)
     if not cap.isOpened():
-        raise RuntimeError("Could not open webcam. Try --camera 1 or allow camera permissions.")
-    selected = None
-    query = ""
-    typing = False
-    status = "Show a printed object tag"
-    last_saved: dict[int, float] = {}
-    was_visible: dict[int, Observation] = {}
-    # A cached camera frame exists only until the tag disappears; then we
-    # persist that *last unobscured* image for an optional evidence snapshot.
-    last_frame: dict[int, np.ndarray] = {}
+        engine.close()
+        raise SystemExit('Could not open the camera. Try --camera 1 or allow camera permissions.')
+    selected, query, typing = None, '', False
+    status_line = 'Show a printed tag or an enrolled object'
     cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
-                status = "Camera frame unavailable"
+                status_line = 'Camera frame unavailable'
                 break
             if mirrored:
                 frame = cv2.flip(frame, 1)
-            h, w = frame.shape[:2]
-            observations = {i: obs for i, obs in detect_markers(frame).items()
-                            if i in objects}
-            now = time.monotonic()
-            for i, obs in observations.items():
-                last_frame[i] = frame.copy()
-                if now - last_saved.get(i, 0) >= 0.75:
-                    save_observation(conn, obs, w, h)
-                    last_saved[i] = now
-            for i in set(was_visible) - set(observations):
-                old = was_visible[i]
-                image = last_frame.pop(i, None)
-                snapshot = None
-                if image is not None:
-                    snapshot = DATA / f"last_seen_{i}.jpg"
-                    cv2.imwrite(str(snapshot), image, [int(cv2.IMWRITE_JPEG_QUALITY), 87])
-                save_observation(conn, old, w, h, str(snapshot) if snapshot else None)
-            was_visible = observations
-            record = get_last_seen(conn, selected) if selected is not None else None
-            display = make_display(frame, observations, objects, selected,
-                                   record, typing, query, status)
-            cv2.imshow(WINDOW, display)
+            result = engine.process(frame)
+            engine.selected = selected
+            canvas = engine.annotate(frame, result)
+            items = engine.status()['items']
+            cv2.imshow(WINDOW, make_display(canvas, items, selected, typing, query, status_line))
             key = cv2.waitKey(1) & 0xFF
             if key in (27, ord('q')) and not typing:
                 break
             if typing:
                 if key in (13, 10):
-                    selected = match_object(query, objects)
-                    status = (f"Finding {objects[selected]['name']}" if selected is not None
-                              else "No match - edit objects.json")
+                    try:
+                        found = engine.search(query)
+                        if found['ambiguous']:
+                            names = ' / '.join(c['name'] for c in found['candidates'])
+                            status_line = f'Which one? {names}'
+                        else:
+                            selected = found['id']
+                            status_line = f"Finding {engine.catalog.objects[selected].name}"
+                    except LookupError:
+                        status_line = 'No match - try another name'
                     typing = False
                 elif key == 27:
                     typing = False
@@ -149,27 +134,30 @@ def run(camera: int, mirrored: bool):
                 elif 32 <= key <= 126 and len(query) < 80:
                     query += chr(key)
             elif key == ord('f'):
-                query = ""
-                typing = True
+                query, typing = '', True
             elif key == ord('c'):
-                selected = None
-                status = "Selection cleared"
+                selected, status_line = None, 'Selection cleared'
             elif ord('1') <= key <= ord('9'):
                 number = key - ord('1')
-                if number < len(objects):
-                    selected = list(objects)[number]
-                    status = f"Finding {objects[selected]['name']}"
+                if number < len(items):
+                    selected = items[number]['id']
+                    status_line = f"Finding {items[number]['name']}"
             if cv2.getWindowProperty(WINDOW, cv2.WND_PROP_VISIBLE) < 1:
                 break
     finally:
         cap.release()
-        conn.close()
+        engine.close()
         cv2.destroyAllWindows()
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--camera", type=int, default=0, help="Webcam index, usually 0")
-    parser.add_argument("--mirror", action="store_true", help="Flip camera like a selfie")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--camera', default='0', help='webcam number, usually 0, or a video file')
+    parser.add_argument('--mirror', action='store_true', help='flip the picture like a selfie camera '
+                        '(note: positions are remembered in the flipped picture)')
+    parser.add_argument('--data-dir', default=str(ROOT / 'data'))
     args = parser.parse_args()
-    run(camera=args.camera, mirrored=args.mirror)
+    try:
+        run(parse_source(args.camera), args.mirror, Path(args.data_dir))
+    except RuntimeError as exc:
+        raise SystemExit(f'Error: {exc}') from exc
