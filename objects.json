@@ -1,0 +1,5 @@
+{
+  "0": {"name": "USB drive", "aliases": ["usb", "flash drive", "pendrive", "thumb drive"]},
+  "1": {"name": "Keys", "aliases": ["key", "keychain", "house keys"]},
+  "2": {"name": "Earphones", "aliases": ["earbuds", "headphones", "airpods"]}
+}
