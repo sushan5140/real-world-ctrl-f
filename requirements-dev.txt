@@ -1,0 +1,4 @@
+# Only needed to run the automated tests.
+httpx>=0.27
+# Optional real-browser test (tests/test_frontend.py BrowserTests):
+#   pip install playwright && python -m playwright install chromium

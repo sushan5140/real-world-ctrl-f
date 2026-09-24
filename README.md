@@ -2,13 +2,23 @@
 
 **What if you could search your desk the way you search your laptop?**
 
-A local, experimental physical-object finder: a stationary camera detects registered objects, remembers where each one was **last seen**, lets you search by name, and can optionally command a small pan/tilt LED to point at that location. A responsive browser studio shows the camera feed, live detections, local object library, last-visible image crops, and search results.
+A webcam watches your desk. It recognises the objects you have registered, remembers **where each one was last seen**, and lets you search for them by name in a browser. An optional ESP32 pan/tilt LED can then point at that spot.
 
-**Important: last observed location does not guarantee an object is still there.** A single camera cannot see inside drawers or through books. The software tracks printed ArUco markers under suitable conditions, and *optionally* recognizes textured objects enrolled by selecting their image region. The latter uses ORB feature matching, not a trained universal item detector: plain USB sticks and visually identical earphones can fail. No AI API key, account, or cloud connection is required for core visual search.
+Everything runs on your own computer. No account, no cloud, no AI API key.
 
-## Start on Windows (PowerShell)
+> **Honest scope.** The app finds *specific objects you registered*, not "any phone" or "any keys".
+> Printed tags (ArUco markers) are the dependable way. Recognising an object **without** a tag works for
+> flat, textured, matte things (book covers, boxes, printed coasters) and poorly for plain, shiny,
+> transparent or very 3-D things (a black phone, a USB stick, earphones).
+> A **last-seen** location is where the camera last saw it, **not** a promise that it is still there.
 
-Download or clone the project, then **enter the folder containing `server.py` and `requirements.txt`**. If you already have the repo checked out:
+---
+
+## 1. Install and start
+
+You need Python 3.11 or newer and a webcam.
+
+**Windows (PowerShell)** — open the folder that contains `server.py`:
 
 ```powershell
 cd "$env:USERPROFILE\Downloads\real-world-ctrl-f"
@@ -18,69 +28,224 @@ py -m venv .venv
 .\.venv\Scripts\python.exe server.py
 ```
 
-Open **http://127.0.0.1:8765** in your browser. If your camera doesn't open, quit with `Ctrl+C` and retry with `--camera 1`. On some systems, Windows Settings → Privacy & security → Camera → allow desktop apps to access camera needs to be enabled. Shut down other apps using the same camera.
+**macOS / Linux**
 
-Use `python server.py --port 8766` if port 8765 is occupied. For a camera-window-only version, run `python app.py` instead of `server.py` (original V0.1 interface).
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python make_markers.py
+python server.py
+```
 
-macOS/Linux: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python make_markers.py && python server.py`.
+Then open **http://127.0.0.1:8765** in your browser. Stop the app with `Ctrl+C` in the terminal.
 
-## Demo A: tags (most dependable starting point)
+Useful options:
 
-1. Print `markers/0_usb_drive.png`, `markers/1_keys.png`, and `markers/2_earphones.png` at approximately 4–6 cm wide. `make_markers.py` generates these locally. Keep the white margin visible.
-2. Attach a corresponding card **to** the object or place it next to the object as a *proxy*. A separate card will only track the card, not the object.
-3. Put the webcam on a stand looking down at a well-lit desk and **don't move the camera** after starting. A laptop camera looking straight ahead will work for experimentation but has a limited desk view.
-4. Show a tag. Its box becomes visible and the item appears as “visible now.”
-5. Search `where is my USB drive`, or click the item in the sidebar.
-6. Cover the object and its tag without moving it. The camera can no longer see it; the UI displays a reticle at the **last observed** position and a crop of the last unobscured view.
-7. Select “Forget object” to clear history; builtin tag cards remain available for later reuse.
-
-## Demo B: enroll your own object (experimental untagged tracking)
-
-1. Click **Enroll a new object**. Drag a rectangle directly on the live camera picture around an item, then enter its name and optional aliases.
-2. Use a well-lit, distinctively textured, fairly flat item (printed notebook cover, decorated box, graphic coaster). Feature matching is usually less reliable on plain, reflective, rotating, or 3D objects.
-3. Keep the same face of the object visible. Move it around and observe whether the detection box follows it. Cover it, then search for its last seen position.
-4. If enrollment says “not enough distinctive details,” improve lighting, move the camera closer, or use the printed-marker workflow instead. **Enrollment success does not guarantee robust recognition**; evaluate with both positive and negative test objects.
-5. Custom object crops are stored in `data/templates/`. Object names and aliases in `data/catalog.json`, history in `data/locations.sqlite3`, and last visible crops in `data/snapshots/`.
-
-**Privacy:** The core app serves the webcam stream **only on your computer** at `127.0.0.1`; it does not upload frames. It automatically stores a cropped last-seen image locally when an observed object disappears. Don't aim the camera at sensitive information. To remove all local memory, stop the app and delete `data/`. A voice-search button is optional and depends on the browser's speech service, which **may send microphone audio to a vendor**; core text search needs no microphone.
-
-## Optional pan/tilt spotlight hardware
-
-This source tree includes the full optional software serial interface and ESP32 firmware, **not** a claim of tested physical robotics. Parts: an ESP32, two hobby servos, a pan/tilt bracket, a low-power LED and appropriate transistor/driver, and a suitable external 5V servo supply. Connect all grounds together. Don't run servos from the microcontroller's 3.3V pin; don't connect mains-powered lamps or lasers.
-
-| ESP32 pin | Function |
+| Option | What it does |
 |---|---|
-| GPIO 18 | Pan servo signal |
-| GPIO 19 | Tilt servo signal |
-| GPIO 23 | LED driver input (through suitable driver) |
-| GND | Common ground with external supply |
+| `--camera 1` | use the second webcam (try this if the picture does not appear) |
+| `--port 8766` | use another port if 8765 is busy |
+| `--serial-port COM3` | connect the spotlight at start-up (you can also do it in the browser) |
+| `--resolution 1280x720` | ask the camera for a larger picture (helps small objects, costs CPU) |
+| `--no-autostart` | wait until you press **Start camera** |
+| `--data-dir demo_data` | keep memory in another folder (e.g. for demos) |
 
-1. In Arduino IDE, install the **ESP32Servo** library and flash `firmware/spotlight/spotlight.ino` to your ESP32.
-2. Find the board's serial port in Windows Device Manager. Stop Arduino Serial Monitor before using the Python application.
-3. **Calibrate before operating:** edit `spotlight.json` with the actual servo angle pairs that aim at the four corners of your camera's fixed desk view: `tl`, `tr`, `bl`, `br`. The included values are placeholders; measure them on your own rig. The firmware further clamps movement to 30–150 degrees by default; adjust only after verifying safe limits.
-4. Run `.\.venv\Scripts\python.exe server.py --serial-port COM3` (change port). In the studio, search an object and click **Point spotlight**. The command sends the remembered normalized x/y through a bilinear corner mapping to servo angles and turns on the LED. **Turn light off** sends a separate command.
-5. The illumination is a demonstration of last-seen location, not an autonomous object-chasing robot. Without physical calibration, the LED may point somewhere else. Keep your eyes out of the beam and avoid leaving the rig running unattended.
+Only one copy of the app can use the same data folder at a time; a second one refuses to start with a clear message.
 
-## Technical structure
+---
+
+## 2. Using the studio
+
+![The browser studio: object library on the left, search on top, live camera in the middle, the selected object's state on the right](docs/studio.png)
+
+*(Screenshot taken with the synthetic demo video, not a real webcam.)*
+
+1. **Start the camera.** It starts automatically; the button in the lower left stops/starts it. Fix the camera on a stand looking down at the desk and **do not move it afterwards** — remembered positions are positions *in this picture*.
+2. **Register objects** with **Add an object**:
+   * **Use a printed tag** – most reliable. Stick a spare tag on the object, hold it in view, and name it. Any tag the camera sees but doesn't know also shows a yellow *“Name it”* banner.
+   * **Draw around it** – the picture freezes; drag a **tight** box around the object (as little desk as possible) and name it. The app tells you if the object has too little surface detail.
+3. **Watch it work.** Recognised objects get a labelled box on the video and a green dot in the library.
+4. **Search.** Press **Ctrl+F** (or `/`) anywhere on the page, type e.g. *“where are my keys?”*, press Enter. Voice search (microphone button) is optional and uses your browser's speech service, which may send audio to its provider.
+5. **Read the answer.** The panel on the right shows one of four states:
+
+| State | Meaning | On the video |
+|---|---|---|
+| **In view now** | detected in the current picture | coloured box around it |
+| **Last seen** | not visible now; last seen at the marked spot (it may have moved since) | pulsing ring + last box |
+| **Uncertain location** | there is a remembered spot but a reason not to trust it (listed) | dashed amber ring |
+| **Not seen yet** | registered but never observed | nothing |
+
+   A location becomes **uncertain** when: the camera has moved since that sighting; the object was last seen at the edge of the picture (probably carried away); the sighting is older than 8 hours; a drawn object was only briefly or weakly recognised; several copies of the same tag were visible; or the record came from the older version of the app. Grey notes also say when the app was restarted in between or the camera is off.
+6. **Last clear view.** A small photo of the object from just before it disappeared, to jog your memory.
+7. **Remove / forget.** *Remove* deletes an object you created (template, history, photo). For the three built-in tags it becomes *Clear history*. **Clear all remembered locations** (Privacy card) wipes every position and photo but keeps the library.
+8. **Another view.** For drawn objects, *Add another view* stores a second picture (e.g. the back of a book) – up to 4.
+
+The desktop-only window is still available: `python app.py` (keys: `F` search, `1–9` select, `C` clear, `Q` quit). It uses the same engine, library and memory as the browser studio. Run one or the other, not both.
+
+---
+
+## 3. Printed tags
+
+`make_markers.py` writes to `markers/`:
+
+* `0_usb_drive.png`, `1_keys.png`, `2_earphones.png` – the three built-in objects (see `objects.json`)
+* `spare_3.png` … `spare_8.png` – blank tags you can name from the browser
+* `sheet_a4.png` – all of them on one A4 page. **Print at 100 % / “actual size”.** Default black square: 45 mm (`--size-mm 60` for bigger).
+
+Tips: keep the white border visible, avoid glossy paper under bright lamps, and make the tag at least ~40 pixels wide in the camera picture. A tag **lying next to** an object only tracks the tag – attach it to the object.
+
+---
+
+## 4. Tag-free (“drawn”) objects – how it works and its limits
+
+The app stores the pixels inside your box, separates the object from the background inside that box (OpenCV GrabCut) and keeps ORB feature points on the object. Every frame it looks for those features and accepts a match only if they form a geometrically consistent, plausibly shaped outline, cover a good part of the object **including its centre**, and appear in several consecutive frames.
+
+Measured on the included synthetic benchmark (`python tools/benchmark_recognition.py`, 3 objects per desk scene, random rotation, 55–120 % scale, perspective, lighting changes, blur, JPEG, 50 % partly covered):
+
+| matcher | recall | wrong place | false alarms (object absent) |
+|---|---|---|---|
+| original v0.2 | 11–19 % | 29–38 % | 36–53 % |
+| **this version** | **59–64 %** | **0.5–3 %** | **0–6.5 %** |
+
+These are *per single frame* and on *synthetic, flat* objects: they compare the two versions, they do **not** predict your webcam. The tracker additionally needs 3 consecutive matches before it shows an object, and tolerates short dropouts, which suppresses most single-frame errors. Also evaluated and **not** adopted because they did not help on the benchmark: contrast equalisation (CLAHE), SIFT (lower recall, ~4× slower), gridded features and region-of-interest tracking. No neural detector is included: generic detectors recognise categories (“cell phone”), not *your* phone, so they would add a large dependency without solving this problem.
+
+Works well: book and notebook covers, printed boxes, packaging, board-game pieces with artwork, coasters, maps.
+Works badly: plain or single-colour items, shiny/reflective (phones, glasses, metal), transparent, thin (cables, pens), very small, soft/deforming (clothes), and identical-looking items (two identical earbud cases).
+
+**Enrol it where it lives**: on the desk, under the camera, with a tight box. Holding an object up in front of a laptop camera captures your face and hand as part of the “object”.
+
+---
+
+## 5. Visual memory – what is stored
+
+Everything lives in `data/` (ignored by git):
+
+| File | Contents |
+|---|---|
+| `locations.sqlite3` | one row per object: last-seen time, picture position/box, camera-position epoch, session, confidence |
+| `snapshots/<id>.jpg` | small crop of the object's last clear view |
+| `catalog.json` | names/aliases of your tags and drawn objects |
+| `templates/<id>.png` + `.mask.png` | pictures of drawn objects and their object masks |
+| `scene_reference.npz` | feature points of the empty scene (no image) used to notice camera movement |
+| `spotlight.json` | your spotlight calibration |
+
+Rules the memory follows:
+
+* Positions are saved about once a second while an object is visible, and once more (with the photo) when it disappears. The time stored is the time of the **last actual detection**.
+* The camera-position check runs about once a second. If the whole picture shifts or rotates consistently for a few seconds, a new *camera epoch* starts and every older position is shown as **uncertain**. Objects moving on the desk don't trigger this. With a blank, featureless view the check reports “can't verify” instead of guessing.
+* After a restart, remembered positions stay; if the camera still sees the same scene they remain *last seen* (with a note that the app was not watching in between), otherwise they become uncertain.
+* IDs of removed objects are never reused, so a new object can never inherit an old object's history.
+* Data from the previous version is upgraded automatically (old positions are marked uncertain because they were recorded without the camera-position check; absolute file paths are repaired).
+
+To erase everything, stop the app and delete the `data` folder.
+
+---
+
+## 6. Optional robotic spotlight (ESP32 + two servos + LED)
+
+This is optional and **has not been validated on physical hardware by the author of these changes** – the firmware was compiled and its protocol tested on a PC with stand-in Arduino headers only. Calibrate before relying on it.
+
+**Parts:** ESP32 dev board, two hobby servos (e.g. SG90/MG90S), a pan/tilt bracket, a low-power LED with a transistor/MOSFET driver and resistor, a separate 5 V supply (≥ 2 A) for the servos, jumper wires.
+
+| ESP32 pin | Connects to |
+|---|---|
+| GPIO 18 | pan servo signal |
+| GPIO 19 | tilt servo signal |
+| GPIO 23 | LED driver input (not the LED directly) |
+| GND | servo supply GND **and** LED driver GND (common ground) |
+
+Safety: never power servos from the ESP32's 3.3 V pin; use only a low-power LED – **no lasers**, no mains lamps; keep eyes out of the beam; don't leave it running unattended. The firmware limits servo angles to 30–150°, moves smoothly instead of jumping, and turns the LED off by itself after 2 minutes without commands.
+
+**Flash:** Arduino IDE → install *ESP32 board support* and the **ESP32Servo** library → open `firmware/spotlight/spotlight.ino` → select your board and port → Upload. Close the Serial Monitor afterwards (it blocks the port).
+
+**Connect:** in the studio open **Robotic spotlight**, choose the port (Windows: `COM3`, …; Linux: `/dev/ttyUSB0`; macOS: `/dev/cu.usbserial-…`) and press **Connect**. The app waits for the board to answer (`READY`/`PONG`); with the old v1 firmware it still works but cannot confirm movements.
+
+**Calibrate** (needed once per rig, and again if the camera or lamp moves):
+
+1. Open **Calibrate**. Use the arrow pad (step 1/5/15°) to aim the light at the **top-left corner of the camera picture** on your desk, then press **Save top-left**.
+2. Repeat for top-right, bottom-left, bottom-right.
+3. Tick **Test: click the camera picture to aim there** and click around the video to check.
+
+The mapping interpolates between the four corners. It is accurate for a flat desk with the lamp near the camera; tall objects and a lamp far from the camera give larger errors. Calibration is saved to `data/spotlight.json` (the repository's `spotlight.json` only holds placeholder values, flagged `"placeholder": true`).
+
+Serial protocol (115200 baud): `?` → `PONG CTRLF-SPOTLIGHT 2`, `P,<pan>,<tilt>` → `OK P,<pan>,<tilt>` (applied angles), `L,1`/`L,0`, `H` (centre, light off); errors reply `ERR …`.
+
+---
+
+## 7. Try it without a webcam
+
+```bash
+python tools/make_demo_video.py              # writes demo_desk.mp4 (synthetic desk)
+python server.py --camera demo_desk.mp4 --data-dir demo_data
+```
+
+The video contains the USB-drive and keys tags, an unregistered spare tag and a “Field Notes” cover you can enrol by drawing a box. It is for trying the interface; it says nothing about real-camera performance.
+
+---
+
+## 8. Troubleshooting
+
+| Problem | Try |
+|---|---|
+| “The camera is not available” | Close Zoom/Teams/Camera app; try `--camera 1`; Windows: Settings → Privacy & security → Camera → allow desktop apps. |
+| Tags are not detected | More light, less glare, bigger print, keep the white border, bring the camera closer. |
+| Drawn object not found | Draw a tighter box, enrol it lying on the desk under the camera, add a second view, or use a printed tag. |
+| Everything says “uncertain · camera moved” | The camera was bumped. Objects become reliable again as soon as they are seen. |
+| “Can't verify camera position” | The view has too little detail (blank desk, dark room). Positions still work; the camera-move check just can't run. |
+| “Another Real-World Ctrl+F window is already using …” | Close the other `server.py` / `app.py`. |
+| Port 8765 busy | `python server.py --port 8766` |
+| Spotlight: “Cannot open COM3” | Close Arduino Serial Monitor, check the port in Device Manager, replug USB. |
+| Spotlight points to the wrong place | Calibrate the four corners; re-calibrate after moving the camera or the lamp. |
+
+---
+
+## 9. Tests
+
+```bash
+pip install -r requirements-dev.txt
+python -m unittest discover -s tests -v
+python tools/benchmark_recognition.py       # optional recognition benchmark
+```
+
+What is covered (all camera-free, using synthetic frames): tag detection and duplicates; name search (plurals, typos, no substring false matches); enrolment quality, rotation/scale/lighting, background false positives, multiple views, identity conflicts; confirmation over several frames, short dropouts, disappearance, reappearance, edge exits, stale records, camera-movement detection, restarts, upgrade of old data, data-folder locking; the HTTP API including validation and security checks; the real camera thread on a synthetic video; spotlight calibration and serial protocol with a fake port; the firmware source compiled for the PC (needs `g++`); front-end ↔ API consistency and the page's security policy; and, if Playwright is installed, a real-browser run that searches, enrols and removes an object.
+
+Not covered: real webcams, real lighting, real objects, real ESP32/servos. Those need a physical test on your rig.
+
+---
+
+## 10. How the code is organised
+
+```
+ camera.py ──frames──▶ engine.py ──────────────▶ memory.py (SQLite, last-seen rows)
+ (webcam/video,        ├─ tracker.py  (ArUco tags)      catalog.py (names, tags, drawn objects, search)
+  reconnects)          ├─ vision.py   (drawn objects)   scene.py   (camera-moved watchdog)
+                       └─ tracks + VISIBLE / LAST SEEN / UNCERTAIN / NOT SEEN
+        server.py (FastAPI, 127.0.0.1 only) ◀─┘            app.py (OpenCV desktop window)
+        ├─ web/ (browser studio)
+        └─ spotlight.py ──serial──▶ firmware/spotlight/spotlight.ino (ESP32)
+```
 
 | File | Responsibility |
 |---|---|
-| `server.py` | Local web API, camera loop, persistent observations, enrollment, search and image crops |
-| `vision.py` | Private visual templates and geometric ORB/Homography matching |
-| `tracker.py` | ArUco detection, SQLite memory and local name matching |
-| `spotlight.py` / `spotlight.json` | Optional serial pan/tilt + user-calibrated camera mapping |
-| `firmware/spotlight/spotlight.ino` | ESP32 servo/LED firmware |
-| `web/` | Responsive browser studio, object library and optional browser voice input |
-| `app.py` | Original minimal OpenCV V0.1 desktop view |
+| `engine.py` | the one tracking engine shared by `server.py` and `app.py` |
+| `vision.py` | tag-free recognition of enrolled objects |
+| `tracker.py` | printed-tag detection (+ helpers kept for older scripts) |
+| `catalog.py` | object library and local name search |
+| `memory.py` | SQLite visual memory with automatic upgrades |
+| `scene.py` | detects camera movement |
+| `camera.py` | camera/video input thread with reconnects |
+| `server.py` | local web API, security checks, MJPEG stream |
+| `spotlight.py` | spotlight calibration and serial protocol |
+| `web/` | browser studio (no external fonts or scripts) |
+| `tools/` | recognition benchmark, demo-video generator |
 
-## Validation
+## 11. Privacy and security
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-```
+* The server listens on `127.0.0.1` only; frames are never uploaded.
+* Other websites can't use it: requests with a foreign `Host` are refused (prevents DNS-rebinding), state-changing requests need a custom header and same origin, and a strict Content-Security-Policy / `Cross-Origin-Resource-Policy` stop other pages from embedding the camera stream.
+* Only small crops of registered objects are saved, never video. Don't point the camera at documents or screens you don't want in those crops.
 
-The automated tests cover synthetic printed-tag detection, SQLite persistence, browser routes, tag occlusion and snapshot retrieval, visual enrollment on a textured synthetic object, forgetting, and servo mapping. GitHub Actions runs camera-free tests across Python 3.11–3.13. Tests do not establish performance with your specific webcam, lighting, object types or real electronics; those require physical testing.
+## 12. What to say in a demo
 
-## Demo truthfulness
-
-You can say: “A stationary webcam remembers where a registered object was last seen; the optional spotlight points to the remembered position.” Don't say: “It always knows where every lost item is.” If someone moves a covered object or the camera moves, the saved coordinates can become misleading. Future engineering work includes multi-camera mapping, measured recognition/false-positive rates on a real desk, and automatic calibration assistance.
+Say: *“A fixed webcam remembers where each registered object was last seen, tells you when that memory can't be trusted, and a small robotic lamp points at it.”*
+Don't say: *“It always knows where every lost item is.”* A single camera can't see inside drawers or under books, and an object moved while hidden keeps its old position until it is seen again.

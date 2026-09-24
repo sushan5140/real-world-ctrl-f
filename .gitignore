@@ -4,6 +4,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 data/
+demo_data/
+demo_desk.mp4
 markers/
+*.tmp
 .DS_Store
 Thumbs.db
