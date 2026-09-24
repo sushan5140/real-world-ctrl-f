@@ -1,35 +1,246 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Real-World Ctrl+F · Your room has a search bar</title>
-<link rel="stylesheet" href="/style.css"></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Real-World Ctrl+F</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+</head>
 <body>
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3.5 8.5a2 2 0 0 1 2-2h2l1.6-2h5.8l1.6 2h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h3v3H8zM13 13h3v3h-3zM13 8h3M8 16h3"/></symbol>
+  <symbol id="i-shape" viewBox="0 0 24 24"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><circle cx="12" cy="12" r="3.5"/></symbol>
+  <symbol id="i-light" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+</svg>
+
 <div class="shell">
-  <aside class="sidebar">
-    <a class="brand" href="/" aria-label="Real-World Ctrl+F"><span class="logo">⌕</span><span>REAL-WORLD<br><strong>CTRL + F</strong></span></a>
-    <div class="eyebrow">YOUR VISUAL MEMORY</div>
-    <div class="intro">Find the things<br>you just put down<span>.</span></div>
-    <p class="intro-note">A small experiment in giving physical objects a searchable history.</p>
-    <div class="line"></div>
-    <div class="listheading"><span>OBJECT LIBRARY</span><span id="count">0</span></div>
-    <div id="objects" class="objects" aria-live="polite"></div>
-    <button id="add" class="add">＋ &nbsp; Enroll a new object</button>
-    <div class="sidebar-bottom"><div class="dot"></div><span id="camera-status">Connecting to camera…</span></div>
+  <!-- ============================== LIBRARY ============================== -->
+  <aside class="sidebar" aria-label="Object library">
+    <a class="brand" href="/" aria-label="Real-World Ctrl+F home">
+      <span class="logo" aria-hidden="true"><svg><use href="#i-search"/></svg></span>
+      <span>REAL-WORLD<br><strong>CTRL + F</strong></span>
+    </a>
+    <p class="intro-note">Search the physical world the way you search your computer.</p>
+
+    <div class="listheading"><span>OBJECT LIBRARY</span><span id="count" class="count">0</span></div>
+    <div id="summary" class="summary" aria-live="polite"></div>
+    <div id="objects" class="objects" role="list"></div>
+    <button id="add" class="add" type="button"><svg><use href="#i-plus"/></svg>Add an object</button>
+
+    <div class="sidebar-bottom">
+      <div class="camera-line"><span id="camera-dot" class="dot"></span><span id="camera-status">Connecting…</span></div>
+      <button id="camera-toggle" class="ghost small" type="button">Stop camera</button>
+    </div>
   </aside>
+
+  <!-- ================================ MAIN ================================ -->
   <main class="main">
-    <header class="top"><div class="crumb">STUDIO <span>/</span> LIVE DESK</div><div class="local"><i></i> ON-DEVICE · PRIVATE BY DEFAULT</div></header>
-    <section class="hero"><div class="tag">01 / FIND IN THE PHYSICAL WORLD</div>
-      <h1>Where did I <em>put it?</em></h1><p>Your camera remembers where registered objects were last seen. Search by name and follow the marker — no guessing.</p>
-      <form id="search-form" class="search"><span class="search-icon">⌕</span><input id="search" autocomplete="off" maxlength="100" placeholder="Try ‘where are my keys?’" aria-label="Find an object"><button id="voice" type="button" title="Optional browser voice service; audio may be processed by your browser provider" class="voice" aria-label="Search by voice">◉</button><button type="submit">Find object <span>↗</span></button></form>
-      <div id="message" class="message" role="status" aria-live="polite">Show the printed markers to the camera, or enroll your own textured object.</div>
+    <header class="top">
+      <div class="crumb">STUDIO <span>/</span> LIVE DESK</div>
+      <div class="local"><svg><use href="#i-lock"/></svg> ON-DEVICE · NOTHING IS UPLOADED</div>
+    </header>
+
+    <section class="hero">
+      <h1>Where did I <em>put it?</em></h1>
+      <form id="search-form" class="search" role="search" autocomplete="off">
+        <svg class="search-icon" aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="search" maxlength="100" placeholder="Try “where are my keys?”" aria-label="Find an object" enterkeyhint="search">
+        <kbd class="kbd" aria-hidden="true">Ctrl F</kbd>
+        <button id="voice" type="button" class="icon-btn" aria-label="Search by voice"><svg><use href="#i-mic"/></svg></button>
+        <button type="submit" class="primary">Find</button>
+      </form>
+      <div id="candidates" class="candidates" hidden></div>
     </section>
-    <section class="stage"><div class="stage-top"><div><span class="live-dot"></span> LIVE CAMERA <span class="secondary">/ LAST-SEEN MAP</span></div><div class="stage-meta">FIX YOUR CAMERA IN PLACE FOR ACCURATE HISTORY</div></div>
-      <div id="camera-frame" class="camera-frame"><img id="feed" src="/stream" alt="Local camera feed with detected object boxes"><div id="selection" class="selection" hidden></div><div id="camera-placeholder" class="placeholder">📷 <br>Camera feed unavailable. Check camera permissions and refresh.</div><div id="draw-hint" class="draw-hint" hidden>Drag a rectangle around your object — include its distinctive surface.</div></div>
-      <div class="stage-foot"><span>● &nbsp; Tracking is on your computer, not a cloud service.</span><span id="last-refresh">READY</span></div></section>
-    <section class="details"><div class="detail-main"><div class="eyebrow">SELECTED OBJECT</div><h2 id="selected-name">Nothing selected yet</h2><p id="selected-description">Search above, or choose an object from the left.</p><div id="selected-meta" class="meta"></div><div class="actions"><button id="point" disabled class="primary">↗ &nbsp; Point spotlight</button><button id="light-off" disabled class="ghost">Turn light off</button><button id="forget" disabled class="ghost danger">Forget object</button></div></div><div class="evidence"><div class="eyebrow">LAST VISIBLE CROP</div><img id="snapshot" alt="Last unobscured crop of object" hidden><p id="snapshot-note">A crop appears after the object leaves the camera view.</p></div></section>
-    <footer>REAL-WORLD CTRL+F <span>·</span> A LOCAL CREATIVE TECHNOLOGY EXPERIMENT <span>·</span> LAST SEEN ≠ STILL THERE</footer>
+
+    <div class="workspace">
+      <!-- ------------------------------ STAGE ------------------------------ -->
+      <section class="stage" aria-label="Camera">
+        <div class="stage-top">
+          <div class="stage-title"><span id="live-dot" class="live-dot"></span><span id="stage-mode">LIVE CAMERA</span></div>
+          <div id="scene-state" class="scene-state" title="The app checks whether the camera itself has moved"></div>
+        </div>
+        <div id="banner" class="banner" hidden></div>
+        <div class="stage-body">
+          <div id="media" class="media">
+            <img id="feed" alt="Live camera picture with recognised objects outlined">
+            <img id="still" alt="Frozen camera picture for drawing a selection" hidden>
+            <div id="overlay" class="overlay" aria-hidden="true"></div>
+            <div id="selection" class="selection" hidden></div>
+            <div id="placeholder" class="placeholder">
+              <svg><use href="#i-camera"/></svg>
+              <strong id="placeholder-title">Camera is off</strong>
+              <span id="placeholder-text">Start the camera to begin watching your desk.</span>
+              <button id="placeholder-start" class="primary" type="button">Start camera</button>
+            </div>
+          </div>
+        </div>
+        <div class="stage-foot"><span id="stage-hint">Keep the camera fixed in place: remembered positions are positions in this picture.</span><span id="fps"></span></div>
+      </section>
+
+      <!-- ----------------------------- DETAILS ----------------------------- -->
+      <section class="details" aria-label="Selected object">
+        <div id="detail-empty" class="card empty-card">
+          <div class="eyebrow">HOW IT WORKS</div>
+          <ol class="steps">
+            <li><b>Show an object.</b> Attach a printed tag, or use <i>Add an object</i> to teach it a textured object.</li>
+            <li><b>Let it watch.</b> Recognised objects get a box and are remembered where they were last seen.</li>
+            <li><b>Search.</b> Type or say its name. You'll see it live, or its last known spot.</li>
+          </ol>
+        </div>
+
+        <article id="detail" class="card detail" hidden>
+          <div class="detail-head">
+            <div>
+              <div id="detail-kind" class="eyebrow"></div>
+              <h2 id="detail-name"></h2>
+            </div>
+            <button id="detail-close" class="icon-btn" type="button" aria-label="Clear selection"><svg><use href="#i-x"/></svg></button>
+          </div>
+          <div id="detail-state" class="state-badge"></div>
+          <p id="detail-text" class="detail-text"></p>
+          <ul id="detail-reasons" class="reasons"></ul>
+          <figure id="snapshot-wrap" class="snapshot" hidden>
+            <img id="snapshot" alt="Last clear view of the object">
+            <figcaption id="snapshot-caption">Last clear view</figcaption>
+          </figure>
+          <dl id="detail-meta" class="meta"></dl>
+          <div class="actions">
+            <button id="point" class="primary" type="button" disabled><svg><use href="#i-light"/></svg>Point spotlight</button>
+            <button id="add-view" class="ghost" type="button" hidden><svg><use href="#i-layers"/></svg>Add another view</button>
+            <button id="forget" class="ghost danger" type="button"><svg><use href="#i-trash"/></svg><span>Forget</span></button>
+          </div>
+        </article>
+
+        <details id="spot-panel" class="card spot">
+          <summary><span class="eyebrow">OPTIONAL HARDWARE</span><span class="spot-title">Robotic spotlight <span id="spot-chip" class="chip">Not connected</span></span></summary>
+          <div id="spot-disconnected" class="spot-body">
+            <p class="muted">An ESP32 pan/tilt LED can point at an object's last known position. See the README for wiring.</p>
+            <div class="row">
+              <select id="spot-port" aria-label="Serial port"></select>
+              <button id="spot-refresh" class="ghost small" type="button">Refresh</button>
+            </div>
+            <input id="spot-port-manual" placeholder="or type a port, e.g. COM3" aria-label="Serial port name">
+            <button id="spot-connect" class="primary wide" type="button">Connect</button>
+          </div>
+          <div id="spot-connected" class="spot-body" hidden>
+            <p id="spot-info" class="muted"></p>
+            <p id="spot-cal-warning" class="warn-note" hidden>Not calibrated yet — the light will not point at the right place until you calibrate the four corners below.</p>
+            <div class="row">
+              <button id="spot-light" class="ghost small" type="button">Light on</button>
+              <button id="spot-home" class="ghost small" type="button">Centre</button>
+              <button id="spot-disconnect" class="ghost small" type="button">Disconnect</button>
+            </div>
+            <details class="calib">
+              <summary>Calibrate</summary>
+              <p class="muted">Nudge the light until it points at a corner of the camera picture, then save that corner. Repeat for all four.</p>
+              <div class="jog">
+                <button type="button" data-jog="tilt:-1" aria-label="Tilt up">▲</button>
+                <button type="button" data-jog="pan:1" aria-label="Pan left">◀</button>
+                <output id="spot-angles">–</output>
+                <button type="button" data-jog="pan:-1" aria-label="Pan right">▶</button>
+                <button type="button" data-jog="tilt:1" aria-label="Tilt down">▼</button>
+              </div>
+              <label class="step">Step <select id="spot-step"><option>1</option><option selected>5</option><option>15</option></select> °</label>
+              <div class="corners">
+                <button type="button" class="ghost small" data-corner="tl">Save top-left</button>
+                <button type="button" class="ghost small" data-corner="tr">Save top-right</button>
+                <button type="button" class="ghost small" data-corner="bl">Save bottom-left</button>
+                <button type="button" class="ghost small" data-corner="br">Save bottom-right</button>
+              </div>
+              <label class="toggle"><input id="aim-mode" type="checkbox"> Test: click the camera picture to aim there</label>
+            </details>
+          </div>
+        </details>
+
+        <div class="privacy card">
+          <div class="eyebrow">PRIVACY</div>
+          <p class="muted">Frames stay on this computer. Last-seen crops and positions are stored in the <code>data</code> folder.</p>
+          <button id="clear-memory" class="ghost small danger" type="button">Clear all remembered locations</button>
+        </div>
+      </section>
+    </div>
+    <footer>REAL-WORLD CTRL+F <span>·</span> A LOCAL CREATIVE-TECHNOLOGY EXPERIMENT <span>·</span> LAST SEEN ≠ STILL THERE</footer>
   </main>
 </div>
-<dialog id="enroll-dialog"><form id="enroll-form" method="dialog"><div class="eyebrow">ENROLLMENT / 02</div><h2>Give that object a name.</h2><p>The selected image area will be used as your private visual template. Textured, detailed objects work better than plain plastic.</p><label for="object-name">NAME</label><input id="object-name" maxlength="45" minlength="2" required placeholder="e.g. My notebook"><label for="object-aliases">ALIASES <small>optional, comma separated</small></label><input id="object-aliases" placeholder="e.g. journal, diary"><div class="dialog-actions"><button type="button" id="cancel-enroll" class="ghost">Cancel</button><button type="submit" class="primary">Save this object ↗</button></div></form></dialog>
+
+<!-- Add-object chooser -->
+<dialog id="add-dialog" class="sheet">
+  <form method="dialog">
+    <div class="eyebrow">ADD AN OBJECT</div>
+    <h2>How should it be recognised?</h2>
+    <button class="choice" value="draw" type="submit">
+      <svg><use href="#i-shape"/></svg>
+      <span><b>Draw around it</b><small>For flat, textured, matte things: book covers, boxes, printed coasters. Works without a tag, less reliably.</small></span>
+    </button>
+    <button class="choice" value="tag" type="submit">
+      <svg><use href="#i-tag"/></svg>
+      <span><b>Use a printed tag</b><small>Most dependable. Attach a spare tag from <code>make_markers.py</code> to anything — keys, earphones, a USB stick.</small></span>
+    </button>
+    <div class="dialog-actions"><button class="ghost" value="cancel" type="submit">Cancel</button></div>
+  </form>
+</dialog>
+
+<!-- Name a drawn object -->
+<dialog id="enroll-dialog">
+  <form id="enroll-form" method="dialog">
+    <div class="eyebrow">NAME IT</div>
+    <h2>What is this?</h2>
+    <img id="enroll-preview" class="enroll-preview" alt="Selected area">
+    <label for="object-name">Name</label>
+    <input id="object-name" maxlength="45" minlength="2" required placeholder="e.g. Blue notebook">
+    <label for="object-aliases">Other names <small>optional, comma separated</small></label>
+    <input id="object-aliases" placeholder="e.g. journal, diary">
+    <p id="enroll-error" class="form-error" role="alert" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" id="enroll-cancel" class="ghost">Back</button>
+      <button type="submit" id="enroll-save" class="primary">Save object</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Register a printed tag -->
+<dialog id="tag-dialog">
+  <form id="tag-form" method="dialog">
+    <div class="eyebrow">PRINTED TAG</div>
+    <h2>Name a tag</h2>
+    <p id="tag-help" class="muted">Hold an unused printed tag in front of the camera. It will appear here.</p>
+    <div id="tag-list" class="tag-list" role="radiogroup" aria-label="Tags in view"></div>
+    <label for="tag-name">Name</label>
+    <input id="tag-name" maxlength="45" minlength="2" required placeholder="e.g. Wallet">
+    <label for="tag-aliases">Other names <small>optional, comma separated</small></label>
+    <input id="tag-aliases" placeholder="e.g. purse">
+    <p id="tag-error" class="form-error" role="alert" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" id="tag-cancel" class="ghost">Cancel</button>
+      <button type="submit" class="primary">Register tag</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Generic confirmation -->
+<dialog id="confirm-dialog">
+  <form method="dialog">
+    <h2 id="confirm-title">Are you sure?</h2>
+    <p id="confirm-text" class="muted"></p>
+    <div class="dialog-actions">
+      <button class="ghost" value="cancel" type="submit">Cancel</button>
+      <button id="confirm-ok" class="primary" value="ok" type="submit">Confirm</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 <script src="/client.js" defer></script>
-</body></html>
+</body>
+</html>
