@@ -64,6 +64,7 @@ class HybridRuntime:
         with self._lock:
             return {
                 "configured": self.grok.configured,
+                "provider": getattr(self.grok, "provider", "unknown"),
                 "model": self.grok.model,
                 "auto_enabled": self.auto_enabled,
                 "mobile_enabled": self.mobile_enabled,
