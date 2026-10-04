@@ -11,6 +11,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import binascii
+import ipaddress
+import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -21,6 +25,8 @@ from pydantic import BaseModel, Field
 
 from camera import CameraWorker, parse_source
 from engine import ROOT, TrackingEngine
+from grok_vision import GrokError
+from hybrid import HybridRuntime
 from spotlight import CORNER_NAMES, Spotlight, SpotlightError, list_ports
 
 WEB = ROOT / 'web'
@@ -64,6 +70,12 @@ class Toggle(BaseModel):
     enabled: bool
 
 
+class SemanticImageRequest(BaseModel):
+    image: str = Field(min_length=20, max_length=30_000_000)
+    zone: str = Field(default="room", min_length=1, max_length=80)
+    keep_evidence: bool = False
+
+
 class CameraRequest(BaseModel):
     source: str | None = Field(default=None, max_length=300)
 
@@ -91,25 +103,33 @@ class Studio:
 
     def __init__(self, engine: TrackingEngine, camera_source: int | str = 0,
                  spotlight: Spotlight | None = None, max_fps: float = 15.0,
-                 resolution: tuple[int, int] | None = (960, 540)):
+                 resolution: tuple[int, int] | None = (960, 540), lan_scan: bool = False):
         self.engine = engine
         self.spotlight = spotlight or Spotlight(None, ROOT / 'spotlight.json', engine.data_dir / 'spotlight.json')
         self.camera = CameraWorker(self._process, camera_source, max_fps, resolution, on_stop=engine.flush)
+        self.hybrid = HybridRuntime(engine.data_dir)
+        self.hybrid.start()
+        self.lan_scan = bool(lan_scan)
         self.closed = False
 
     def _process(self, frame, now):
+        # Passive Grok discovery is opt-in. When enabled, HybridRuntime samples
+        # changed still frames on a background thread; it never streams video.
+        self.hybrid.maybe_submit_frame(frame, now)
         return self.engine.annotate(frame, self.engine.process(frame, now))
 
     def status(self) -> dict[str, Any]:
         data = self.engine.status()
         data['camera'] = self.camera.status()
         data['spotlight'] = self.spotlight.status()
+        data['hybrid'] = self.hybrid.status()
         return data
 
     def close(self) -> None:
         self.closed = True
         self.camera.stop()
         self.spotlight.disconnect()
+        self.hybrid.close()
         self.engine.close()
 
 
@@ -119,6 +139,49 @@ def host_name(header: str) -> str:
     if header.startswith('['):
         return header.split(']', 1)[0] + ']'
     return header.rsplit(':', 1)[0] if ':' in header else header
+
+
+def _private_host(header: str) -> bool:
+    host = host_name(header).strip("[]")
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
+def _mobile_token_from_path(path: str) -> str | None:
+    parts = [part for part in path.split("/") if part]
+    if len(parts) >= 2 and parts[0] == "mobile":
+        return parts[1]
+    if len(parts) >= 4 and parts[:3] == ["api", "hybrid", "mobile"]:
+        return parts[3]
+    return None
+
+
+def _decode_data_image(value: str) -> bytes:
+    if not isinstance(value, str) or "," not in value:
+        raise ValueError("Expected a JPEG/PNG data URL.")
+    prefix, encoded = value.split(",", 1)
+    if prefix not in ("data:image/jpeg;base64", "data:image/jpg;base64", "data:image/png;base64"):
+        raise ValueError("Only JPEG and PNG images are accepted.")
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("The uploaded image is not valid base64.") from exc
+    if not raw or len(raw) > 20 * 1024 * 1024:
+        raise ValueError("Image must be between 1 byte and 20 MiB.")
+    return raw
+
+
+def _local_ip() -> str:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return "YOUR-LAPTOP-IP"
+    finally:
+        sock.close()
 
 
 def _error(status: int, exc: Exception) -> HTTPException:
@@ -141,7 +204,10 @@ def create_app(studio: Studio, start_camera: bool = True) -> FastAPI:
 
     @app.middleware('http')
     async def local_only(request: Request, call_next):
-        if host_name(request.headers.get('host', '')) not in ALLOWED_HOSTS:
+        path_token = _mobile_token_from_path(request.url.path)
+        lan_mobile = (studio.lan_scan and path_token == studio.hybrid.mobile_token and
+                      studio.hybrid.mobile_enabled and _private_host(request.headers.get('host', '')))
+        if host_name(request.headers.get('host', '')) not in ALLOWED_HOSTS and not lan_mobile:
             # Blocks DNS-rebinding: a hostile site resolving its name to 127.0.0.1.
             return JSONResponse({'detail': 'Unknown host.'}, status_code=400)
         if request.method not in SAFE_METHODS:
@@ -182,6 +248,28 @@ def create_app(studio: Studio, start_camera: bool = True) -> FastAPI:
     @app.get('/favicon.svg')
     def favicon():
         return static('favicon.svg', 'image/svg+xml')
+
+    @app.get('/hybrid')
+    def hybrid_page():
+        return static('hybrid.html', 'text/html; charset=utf-8')
+
+    @app.get('/hybrid.js')
+    def hybrid_js():
+        return static('hybrid.js', 'application/javascript; charset=utf-8')
+
+    @app.get('/hybrid.css')
+    def hybrid_css():
+        return static('hybrid.css', 'text/css; charset=utf-8')
+
+    @app.get('/mobile/{token}')
+    def mobile_page(token: str):
+        if not studio.lan_scan or not studio.hybrid.mobile_enabled or token != studio.hybrid.mobile_token:
+            raise HTTPException(404, 'Mobile room scan is not enabled.')
+        return static('mobile.html', 'text/html; charset=utf-8')
+
+    @app.get('/mobile.js')
+    def mobile_js():
+        return static('mobile.js', 'application/javascript; charset=utf-8')
 
     # ---- live data ----------------------------------------------------------
     @app.get('/api/status')
@@ -297,6 +385,78 @@ def create_app(studio: Studio, start_camera: bool = True) -> FastAPI:
             raise HTTPException(404, 'No last-seen picture yet.')
         return FileResponse(path, media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
 
+
+    # ---- hybrid semantic memory ---------------------------------------------
+    @app.get('/api/hybrid/status')
+    def hybrid_status():
+        return studio.hybrid.status()
+
+    @app.get('/api/hybrid/objects')
+    def hybrid_objects():
+        return {'items': studio.hybrid.memory.latest()}
+
+    @app.get('/api/hybrid/search')
+    def hybrid_search(q: str):
+        return {'items': studio.hybrid.memory.search(q)}
+
+    @app.post('/api/hybrid/auto')
+    def hybrid_auto(req: Toggle):
+        try:
+            studio.hybrid.set_auto(req.enabled)
+            return studio.hybrid.status()
+        except GrokError as exc:
+            raise _error(400, exc) from exc
+
+    @app.post('/api/hybrid/mobile')
+    def hybrid_mobile_toggle(req: Toggle):
+        try:
+            token = studio.hybrid.set_mobile(req.enabled)
+            data = studio.hybrid.status()
+            if token and studio.lan_scan:
+                data['url'] = f"http://{_local_ip()}:{app.state.port}/mobile/{token}"
+            return data
+        except GrokError as exc:
+            raise _error(400, exc) from exc
+
+    @app.post('/api/hybrid/scan-laptop')
+    def hybrid_scan_laptop(req: Toggle):
+        with engine.lock:
+            frame = engine.last_frame.copy() if engine.last_frame is not None else None
+        if frame is None:
+            raise HTTPException(409, 'No laptop camera frame is available.')
+        import cv2
+        ok, encoded = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 84])
+        if not ok:
+            raise HTTPException(500, 'Could not encode the laptop camera frame.')
+        try:
+            scan = studio.hybrid.scan_now(encoded.tobytes(), 'laptop', 'desk', req.enabled)
+            return {'scene': scan.scene, 'count': len(scan.objects),
+                    'objects': studio.hybrid.memory.latest(len(scan.objects) or 1)}
+        except GrokError as exc:
+            raise _error(502, exc) from exc
+
+    @app.post('/api/hybrid/mobile/{token}/scan')
+    def hybrid_mobile_scan(token: str, req: SemanticImageRequest):
+        if not studio.lan_scan or not studio.hybrid.mobile_enabled or token != studio.hybrid.mobile_token:
+            raise HTTPException(404, 'Mobile room scan is not enabled.')
+        try:
+            raw = _decode_data_image(req.image)
+            scan = studio.hybrid.submit_mobile(raw, req.zone, req.keep_evidence)
+            return {'scene': scan.scene, 'count': len(scan.objects),
+                    'objects': studio.hybrid.memory.latest(len(scan.objects) or 1)}
+        except ValueError as exc:
+            raise _error(400, exc) from exc
+        except GrokError as exc:
+            raise _error(502, exc) from exc
+
+    @app.get('/api/hybrid/evidence/{name}')
+    def hybrid_evidence(name: str):
+        safe = Path(name).name
+        path = studio.hybrid.evidence_dir / safe
+        if safe != name or not path.is_file():
+            raise HTTPException(404, 'Evidence image not found.')
+        return FileResponse(path, media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
+
     # ---- spotlight ------------------------------------------------------------
     spot = studio.spotlight
 
@@ -390,6 +550,8 @@ def main() -> None:
     parser.add_argument('--resolution', default='960x540', help='requested camera size, e.g. 1280x720 or auto')
     parser.add_argument('--fps', type=float, default=15, help='maximum frames processed per second')
     parser.add_argument('--no-autostart', action='store_true', help='wait for "Start camera" in the browser')
+    parser.add_argument('--lan-scan', action='store_true',
+                        help='opt in to a token-protected phone room-scan page on your private LAN')
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:
         parser.error('--port must be between 1024 and 65535')
@@ -405,10 +567,14 @@ def main() -> None:
     spotlight = Spotlight(args.serial_port, ROOT / 'spotlight.json', data_dir / 'spotlight.json')
     if spotlight.error:
         print(f'Spotlight: {spotlight.error}')
-    studio = Studio(engine, parse_source(args.camera), spotlight, args.fps, resolution)
+    studio = Studio(engine, parse_source(args.camera), spotlight, args.fps, resolution, args.lan_scan)
     import uvicorn
+    app = create_app(studio, start_camera=not args.no_autostart)
+    app.state.port = args.port
     print(f'Real-World Ctrl+F is running at http://127.0.0.1:{args.port}  (Ctrl+C to stop)')
-    uvicorn.run(create_app(studio, start_camera=not args.no_autostart), host='127.0.0.1', port=args.port,
+    if args.lan_scan:
+        print('LAN phone scanning is available only after you enable it in /hybrid; the main studio remains blocked to LAN hosts.')
+    uvicorn.run(app, host='0.0.0.0' if args.lan_scan else '127.0.0.1', port=args.port,
                 access_log=False, timeout_graceful_shutdown=2)
 
 
