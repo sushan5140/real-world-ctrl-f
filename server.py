@@ -267,9 +267,17 @@ def create_app(studio: Studio, start_camera: bool = True) -> FastAPI:
             raise HTTPException(404, 'Mobile room scan is not enabled.')
         return static('mobile.html', 'text/html; charset=utf-8')
 
-    @app.get('/mobile.js')
-    def mobile_js():
+    @app.get('/mobile/{token}/app.js')
+    def mobile_js(token: str):
+        if not studio.lan_scan or not studio.hybrid.mobile_enabled or token != studio.hybrid.mobile_token:
+            raise HTTPException(404, 'Mobile room scan is not enabled.')
         return static('mobile.js', 'application/javascript; charset=utf-8')
+
+    @app.get('/mobile/{token}/style.css')
+    def mobile_css(token: str):
+        if not studio.lan_scan or not studio.hybrid.mobile_enabled or token != studio.hybrid.mobile_token:
+            raise HTTPException(404, 'Mobile room scan is not enabled.')
+        return static('hybrid.css', 'text/css; charset=utf-8')
 
     # ---- live data ----------------------------------------------------------
     @app.get('/api/status')
@@ -413,7 +421,7 @@ def create_app(studio: Studio, start_camera: bool = True) -> FastAPI:
             token = studio.hybrid.set_mobile(req.enabled)
             data = studio.hybrid.status()
             if token and studio.lan_scan:
-                data['url'] = f"http://{_local_ip()}:{app.state.port}/mobile/{token}"
+                data['url'] = f"http://{_local_ip()}:{getattr(app.state, 'port', 8765)}/mobile/{token}"
             return data
         except GrokError as exc:
             raise _error(400, exc) from exc
