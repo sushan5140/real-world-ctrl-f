@@ -19,8 +19,10 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env", override=True)
-API_URL = "https://api.x.ai/v1/responses"
-DEFAULT_MODEL = "grok-4.7"
+XAI_API_URL = "https://api.x.ai/v1/responses"
+GROQ_API_URL = "https://api.groq.com/openai/v1/responses"
+DEFAULT_XAI_MODEL = "grok-4.7"
+DEFAULT_GROQ_MODEL = "qwen/qwen3.8-27b"
 MAX_JPEG_BYTES = 20 * 1024 * 1024
 
 _PROMPT = """You are the semantic vision layer for a physical-object memory app.
@@ -67,10 +69,46 @@ class SemanticScan:
 
 
 class GrokVision:
+    """Provider-compatible semantic vision adapter.
+
+    The project historically used a Groq key in Hallium/Haneul under several
+    environment names. To avoid sending the wrong credential to xAI, provider
+    selection is explicit and prefix-aware:
+      * gsk_...                  -> GroqCloud
+      * GROQ_API_KEY / AI_API   -> GroqCloud
+      * XAI_API_KEY / XAI_KEY   -> xAI, unless it is actually a gsk_ key
+    """
+
     def __init__(self, api_key: str | None = None, model: str | None = None,
-                 timeout: float = 120.0):
-        self.api_key = (api_key if api_key is not None else os.getenv("XAI_API_KEY", "")).strip()
-        self.model = (model or os.getenv("CTRLF_GROK_MODEL") or DEFAULT_MODEL).strip()
+                 timeout: float = 120.0, provider: str | None = None):
+        env_xai = (os.getenv("XAI_API_KEY") or os.getenv("XAI_KEY") or "").strip()
+        env_groq = (os.getenv("GROQ_API_KEY") or os.getenv("AI_API") or os.getenv("Grok_API") or "").strip()
+        candidate = (api_key or env_xai or env_groq).strip()
+
+        requested = (provider or os.getenv("CTRLF_VISION_PROVIDER") or "").strip().casefold()
+        if requested in {"groq", "groqcloud"}:
+            self.provider = "groq"
+        elif requested in {"xai", "grok"}:
+            self.provider = "xai"
+        elif candidate.startswith("gsk_") or (env_groq and candidate == env_groq):
+            self.provider = "groq"
+        else:
+            self.provider = "xai"
+
+        # Prefer the provider-native variable if both exist.
+        if api_key is None:
+            if self.provider == "groq":
+                candidate = env_groq or env_xai
+            else:
+                candidate = env_xai or env_groq
+
+        self.api_key = candidate.strip()
+        if self.provider == "groq":
+            self.api_url = GROQ_API_URL
+            self.model = (model or os.getenv("CTRLF_GROQ_VISION_MODEL") or DEFAULT_GROQ_MODEL).strip()
+        else:
+            self.api_url = XAI_API_URL
+            self.model = (model or os.getenv("CTRLF_GROK_MODEL") or DEFAULT_XAI_MODEL).strip()
         self.timeout = float(timeout)
 
     @property
@@ -79,22 +117,23 @@ class GrokVision:
 
     def analyze_jpeg(self, jpeg: bytes, context: str = "") -> SemanticScan:
         if not self.configured:
-            raise GrokError("Grok is not configured. Set XAI_API_KEY before starting the app.")
+            raise GrokError(
+                "No vision API key is configured. Set XAI_API_KEY for xAI or GROQ_API_KEY for GroqCloud."
+            )
         if not jpeg:
             raise GrokError("No image data was provided.")
         if len(jpeg) > MAX_JPEG_BYTES:
-            raise GrokError("Image is larger than xAI's 20 MiB image-input limit.")
+            raise GrokError("Image is larger than the provider's 20 MiB image-input limit.")
 
         encoded = base64.b64encode(jpeg).decode("ascii")
         mime = "image/png" if jpeg.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg"
         prompt = _PROMPT
         context = " ".join(str(context).split())[:500]
         if context:
-            prompt += f"\\nUser-provided scan context: {context}"
+            prompt += f"\nUser-provided scan context: {context}"
 
         body = {
             "model": self.model,
-            "store": False,
             "input": [{
                 "role": "user",
                 "content": [
@@ -103,8 +142,11 @@ class GrokVision:
                 ],
             }],
         }
+        if self.provider == "xai":
+            body["store"] = False
+
         request = urllib.request.Request(
-            API_URL,
+            self.api_url,
             data=json.dumps(body).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {self.api_key}",
@@ -118,17 +160,17 @@ class GrokVision:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:1000]
-            raise GrokError(f"xAI request failed ({exc.code}): {detail}") from exc
+            raise GrokError(f"{self.provider} request failed ({exc.code}): {detail}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise GrokError(f"Could not reach xAI: {exc}") from exc
+            raise GrokError(f"Could not reach {self.provider}: {exc}") from exc
         except json.JSONDecodeError as exc:
-            raise GrokError("xAI returned a response that was not valid JSON.") from exc
+            raise GrokError(f"{self.provider} returned a response that was not valid JSON.") from exc
 
         text = _extract_output_text(payload)
         try:
             parsed = _parse_json_object(text)
         except (json.JSONDecodeError, ValueError) as exc:
-            raise GrokError("Grok returned an object inventory that could not be parsed safely.") from exc
+            raise GrokError(f"{self.provider} returned an object inventory that could not be parsed safely.") from exc
         return _validate_scan(parsed, self.model)
 
 
