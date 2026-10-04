@@ -328,3 +328,5 @@ dialog input:focus { border-color: var(--leaf); }
 .icon-btn.listening { background: var(--coral-soft); color: var(--coral); }
 .jog output { white-space: pre-line; }
 .sidebar-bottom .ghost, #fps, .scene-state { white-space: nowrap; }
+
+.hybrid-floating{position:fixed;right:18px;bottom:18px;z-index:30;text-decoration:none;background:#304f38;color:#fff;border-radius:999px;padding:12px 16px;font-size:11px;font-weight:800;box-shadow:0 12px 32px #20352533}.hybrid-floating:hover{background:#42694b}@media(max-width:740px){.hybrid-floating{right:12px;bottom:12px;padding:10px 13px}}
