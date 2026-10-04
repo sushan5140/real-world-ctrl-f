@@ -18,7 +18,7 @@ from typing import Any
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
-load_dotenv(ROOT / ".env", override=False)
+load_dotenv(ROOT / ".env", override=True)
 API_URL = "https://api.x.ai/v1/responses"
 DEFAULT_MODEL = "grok-4.7"
 MAX_JPEG_BYTES = 20 * 1024 * 1024
