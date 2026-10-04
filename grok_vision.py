@@ -81,6 +81,7 @@ class GrokVision:
             raise GrokError("Image is larger than xAI's 20 MiB image-input limit.")
 
         encoded = base64.b64encode(jpeg).decode("ascii")
+        mime = "image/png" if jpeg.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg"
         prompt = _PROMPT
         context = " ".join(str(context).split())[:500]
         if context:
@@ -92,7 +93,7 @@ class GrokVision:
             "input": [{
                 "role": "user",
                 "content": [
-                    {"type": "input_image", "image_url": f"data:image/jpeg;base64,{encoded}", "detail": "high"},
+                    {"type": "input_image", "image_url": f"data:{mime};base64,{encoded}", "detail": "high"},
                     {"type": "input_text", "text": prompt},
                 ],
             }],
