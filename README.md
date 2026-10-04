@@ -14,6 +14,36 @@ Everything runs on your own computer. No account, no cloud, no AI API key.
 
 ---
 
+## Hybrid Spatial Memory (experimental Grok mode)
+
+This branch adds a second memory layer alongside the deterministic desk tracker:
+
+- **Laptop eye:** the fixed webcam keeps doing local tracking. You can manually analyze one current frame with Grok, or opt into passive semantic discovery. Passive mode only submits a changed still frame at most once every 30 seconds; it does **not** upload continuous video.
+- **Mobile eye:** start the server with `--lan-scan`, enable the phone scanner at `/hybrid`, then open the generated secret URL on a phone connected to the same private Wi-Fi. Capture several overlapping room photos and label only the **zone** (for example `bedroom`, `shelf`, `desk`). Grok names the visible objects automatically.
+- **Semantic memory:** Grok results are stored in `data/hybrid/semantic.sqlite3`. The app records object name, common aliases, visual description, confidence, source, zone, relative location hint and model. Optional cropped evidence images live in `data/hybrid/evidence/`.
+- **No API key in the browser:** set `XAI_API_KEY` in the terminal environment before starting the app. The key is read only by the Python server.
+- **Identity is conservative:** Grok can say “black wireless mouse” and generate a visible-trait signature, but that is **not proof** that a later identical-looking mouse is the exact same physical instance. Matching signatures may merge repeat sightings. Precise registered-object positions still come from the local tracker.
+
+Current xAI image-understanding requests use the Responses API with `grok-4.7` by default. Override with `CTRLF_GROK_MODEL` if needed.
+
+### Windows example
+
+```powershell
+$env:XAI_API_KEY="your_xai_key"
+.\.venv\Scripts\python.exe server.py --lan-scan
+```
+
+Then open:
+
+- main studio: `http://127.0.0.1:8765`
+- hybrid dashboard: `http://127.0.0.1:8765/hybrid`
+
+Press **Enable phone scanner** in the hybrid dashboard. The app creates a rotating secret LAN link for the phone. The normal studio remains blocked to LAN hosts.
+
+Privacy note: Grok mode is opt-in. Only still images you explicitly scan, or sampled still frames while passive discovery is enabled, are sent to xAI. Full phone/laptop video is not uploaded by this implementation.
+
+---
+
 ## 1. Install and start
 
 You need Python 3.11 or newer and a webcam.
